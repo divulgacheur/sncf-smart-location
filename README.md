@@ -1,6 +1,6 @@
 # sncf-smart-location
 
-Display train speed, max speed and name of current railway where your train (TGV or Intercités) is located.
+Once connected on train Wi-Fi, display speed, max speed and name of current railway where your train (TGV or Intercités) is located.
 
 Based on OpenStreetMap data, using Overpass-API
 
