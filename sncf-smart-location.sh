@@ -1,4 +1,10 @@
-curl https://wifi.sncf/router/api/train/gps -s > gps ;
+if [[ "$*" == *"--lyria"* ]]
+then
+    url_root="wifi.tgv-lyria.com"
+else
+    url_root="wifi.sncf"
+fi
+curl "https://$url_root/router/api/train/gps" -s > gps ;
 curl -s --data-urlencode "$(echo `echo 'data=way[railway](around:20,' ; cat gps | cut -d, -f4,5 | cut -d\" -f 3,5 | tr -d \": ; echo -n ');(._;>;);out;'  `)" https://overpass-api.de/api/interpreter \
 | grep 'maxspeed\|description\|name' ;
 speed=$(cat gps | cut -d, -f7 | cut -d: -f2)
