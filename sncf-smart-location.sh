@@ -1,3 +1,5 @@
+#!/bin/bash
+
 function log () {
     if [[ $_V -eq 1 ]]; then
         echo "$@"
@@ -16,8 +18,14 @@ elif [[ $CURRENT_SSID == *"LYRIA"* ]]; then
     url_root="wifi.tgv-lyria.com"
 fi
 
-curl "https://$url_root/router/api/train/gps" -s > gps ;
-curl -s --data-urlencode "$(echo `echo 'data=way[railway](around:20,' ; cat gps | cut -d, -f4,5 | cut -d\" -f 3,5 | tr -d \": ; echo -n ');(._;>;);out;'  `)" https://overpass-api.de/api/interpreter \
-| grep 'maxspeed\|description\|name' ;
-speed=$(cat gps | cut -d, -f7 | cut -d: -f2)
-echo "Actual speed : "$( echo "$speed * 3.6" | bc) "km/h"
+curl --silent https://overpass-api.de/api/interpreter --data-urlencode   "data=[out:json];way[railway](around:20,$(curl https://$url_root/router/api/train/gps -s | jq --raw-output '.latitude, .longitude'  | xargs --delimiter '\n' | sed 's/ /,/g' ));(._;>;);out;" | jq '.elements | map(select(.type=="way")) | .[] | .tags | .name |select( . != null )'  --raw-output | sort | uniq --count
+for DISTANCE in 500 1000 2000 5000 10000 20000 30000 50000
+do
+  log "Distance is $DISTANCE meters"
+  FOUND_STATION=$(curl --silent https://overpass-api.de/api/interpreter --data-urlencode   "data=[out:json];node[railway=station](around:$DISTANCE,$(curl https://$url_root/router/api/train/gps -s | jq -r '.latitude, .longitude'  | xargs -d '\n' | sed 's/ /,/g' ));(._;>;);out;" | jq '.elements | map(select(.type=="node")) | .[] | .tags | .name' --raw-output | uniq |  head -1)
+  if [[ -n $FOUND_STATION ]]
+  then
+    echo "Gare la plus proche : $FOUND_STATION (-$DISTANCE mètres)"
+    break
+  fi
+done
