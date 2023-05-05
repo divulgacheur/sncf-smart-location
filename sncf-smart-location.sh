@@ -1,10 +1,11 @@
 #!/bin/bash
 
-function log () {
-    if [[ $_V -eq 1 ]]; then
-        echo "$@"
-    fi
+function log() {
+  [[ $_V -eq 1 ]] && echo "$@"
 }
+
+[[ $1 == "-v" || $1 == "--verbose" ]] && _V=1 && log "Verbose mode enabled"
+
 
 CURRENT_SSID=$(nmcli device wifi  show-password  | grep SSID | cut --delimiter ' ' --field 2)
 if [[ $CURRENT_SSID == *"INTERCITES"* ]]; then
