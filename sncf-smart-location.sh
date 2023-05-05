@@ -22,7 +22,7 @@ curl --silent https://overpass-api.de/api/interpreter --data-urlencode   "data=[
 for DISTANCE in 500 1000 2000 5000 10000 20000 30000
 do
   log "Distance is $DISTANCE meters"
-  FOUND_STATION=$(curl --silent https://overpass-api.de/api/interpreter --data-urlencode   "data=[out:json];node[railway=station](around:$DISTANCE,$(curl https://$url_root/router/api/train/gps -s | jq -r '.latitude, .longitude'  | xargs -d '\n' | sed 's/ /,/g' ));(._;>;);out;" | jq '.elements | map(select(.type=="node")) | .[] | .tags | .name' --raw-output | uniq |  head -1)
+  FOUND_STATION=$(curl --silent https://overpass-api.de/api/interpreter --data-urlencode   "data=[out:json];node[railway=station][train=yes](around:$DISTANCE,$(curl https://$url_root/router/api/train/gps -s | jq -r '.latitude, .longitude'  | xargs -d '\n' | sed 's/ /,/g' ));(._;>;);out;" | jq '.elements | map(select(.type=="node")) | .[] | .tags | .name' --raw-output | uniq |  head -1)
   if [[ -n $FOUND_STATION ]]
   then
     DISTANCE=$(echo "scale=0; $DISTANCE/1000" | bc)
