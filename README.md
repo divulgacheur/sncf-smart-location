@@ -1,20 +1,45 @@
-# sncf-smart-location
+# SNCF Smart Location
 
-Once connected on train Wi-Fi, display speed, nearest station and name of current railway where your train (TGV INOUI, Intercités / Intercités de Nuit, Ouigo or TGV Lyria) is located.
+## Overview
 
-Based on OpenStreetMap data, using Overpass-API
+`SNCF Smart Location` is a Bash command-line utility crafted to retrieve real-time positional and velocity data for trains in France.
+It's a resource tailored for travelers on trains who desire to garner detailed insights regarding their ongoing journey. This tool discerns the type of train based on the WiFi SSID (INTERCITES, INOUI, LYRIA, OUIFI) and employs train service APIs to procure the current latitude, longitude, and speed of the train.
 
-## Prerequisites
+## Features
 
-You need to be connected to the Wi-Fi hotspot of your train (`_SNCF_WIFI_INOUI`, `_SNCF_WIFI_INTERCITES`, `OUIFI` or `_WIFI_LYRIA` ).  
-Make sure you have been authenticated through the captive portal.
+- Retrieves and displays the real-time latitude and longitude coordinates and speed of the train.
+- Automatically identifies the train service type (Intercités de jour, Intercités de nuit, TGV-Inoui, Lyria, OuiGo) based on the WiFi SSID (INTERCITES, INOUI, LYRIA, OUIFI).
+- Utilizes the Overpass API to identify and exhibit nearby railway tracks and stations based on the current coordinates.
+- Offers a link to OpenRailwayMap for a visual representation of the train's location.
+- Assesses whether the train is nearing or departing from a specific station.
+
+## Requirements
+
+- `jq` for processing JSON responses.
+- `curl` for executing HTTP requests.
+- `bc` for performing mathematical operations.
+- A Unix-like operating environment for executing the Bash script.
 
 ## Usage
 
-Run with
+1. Clone the GitHub repository to your local device.
+2. Grant execute permission to the script: `chmod +x sncf_smart_location.sh`
+3. Execute the script: `./sncf_smart_location.sh`
+   Use `-v` or `--verbose` for detailed output and `-q` or `--quiet` to mute additional output.
 
-```
-$ bash sncf-smart-location.sh
-```
+## Limitations
 
+- Assumes that the user is aboard a train and connected to the train's WiFi network (`_SNCF_WIFI_INOUI`, `_SNCF_WIFI_INTERCITES`, `OUIFI` or `_WIFI_LYRIA`) for determining the train type.
+- The precision of the positional and speed data is contingent upon the train service APIs.
 
+## Contribution
+
+Contributions to enhance `SNCF Smart Location` are welcomed. Generate a pull request to commence the contribution process.
+
+## License
+
+The project is under the MIT License.
+
+## Disclaimer
+
+`SNCF Smart Location` is an independent tool and is not officially associated with any train service providers. The precision and availability of data rely on the respective APIs utilized.
