@@ -27,6 +27,17 @@ It's a resource tailored for travelers on trains who desire to garner detailed i
 3. Execute the script: `./sncf_smart_location.sh`
    Use `-v` or `--verbose` for detailed output and `-q` or `--quiet` to mute additional output.
 
+## Example
+
+```bash
+$ ./sncf_smart_location.sh
+Current position (latitude longitude): 45.954069 5.341012
+2 Railway Lines of Ligne de Mâcon à Ambérieu
+Nearest station found: Ambérieu-en-Bugey Latitude Longitude 45.9538732 5.3418521
+You are here: https://www.openrailwaymap.org/?lat=45.954069&lon=5.341012&zoom=14
+The train is approaching Ambérieu-en-Bugey at 37 m and at 57 km/h
+```
+
 ## Limitations
 
 - Assumes that the user is aboard a train and connected to the train's WiFi network (`_SNCF_WIFI_INOUI`, `_SNCF_WIFI_INTERCITES`, `OUIFI` or `_WIFI_LYRIA`) for determining the train type.
