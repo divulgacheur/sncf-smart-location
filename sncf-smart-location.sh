@@ -3,6 +3,12 @@ LC_NUMERIC="en_US.UTF-8"
 
 POSITIONAL_ARGS=()
 
+if ! command -v curl &> /dev/null || ! command -v jq &> /dev/null || ! command -v bc &> /dev/null; then
+    echo "Error: Required dependencies (curl, jq, bc) not found."
+    exit 1
+fi
+
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     -v|--verbose)
@@ -139,7 +145,7 @@ case $CURRENT_SSID in
 esac
 
 function get_train_position(){
-  position_response=$(curl https://$url_root -s )
+  position_response=$(curl https://$url_root -s ) || { echo "Error: Failed to fetch train position."; exit 1; }
   if $uncapsulate_response; then
     position_response=$( echo "$position_response" | sed 's/[()]//g' | sed 's/;//g')
   fi
