@@ -24,21 +24,23 @@ while [[ $# -gt 0 ]]; do
       exit 1
       ;;
     *)
-      POSITIONAL_ARGS+=("$1") # save positional arg
+      POSITIONAL_ARGS+=("$1") # Collect unused positional args (currently not used, kept for future extensions)
       shift # past argument
       ;;
   esac
 done
 
+# log(): prints only in verbose mode
 function log() {
   [[ $_V -eq 1 ]] && echo "$@"
 }
 
+# whisper(): prints unless quiet mode is enabled
 function whisper() {
   [[ $QUIET -ne 1 ]] && echo "$@"
 }
 
-# Multilingual messages
+# Localized messages (FR/EN based on $LANG)
 if [[ $LANG == *"fr"* ]]; then
   MSG_POSITION_NOT_AVAILABLE="Position non disponible"
   MSG_CURRENT_POSITION="Position actuelle (latitude longitude) :"
@@ -122,6 +124,8 @@ acos () {
   bc -l <<<"$pi / 2 - a($1 / sqrt(1 - $1 * $1))"
 }
 
+# Great-circle distance between two GPS points (returns kilometers).
+# Uses a trigonometric formula (acos-based) with bc -l for floating-point math.
 distance () {
   lat_1="$1"
   lon_1="$2"
@@ -143,7 +147,9 @@ distance () {
   distance=`bc <<<"scale=4; $distance / 1 *  1.609344"`
   printf "%.4f\n" $distance
 }
-
+# Intercités uses two different onboard APIs depending on the train (day vs night):
+# - If the SNCF Wi-Fi endpoint responds, use it (day)
+# - Otherwise fall back to ombord.info JSONP endpoint (night), which needs "uncapsulate_response"
 determine_intercites_type(){
   if curl -s "https://wifi.intercites.sncf/router/api/train/gps" -o /dev/null ; \
   then url_root="wifi.intercites.sncf/router/api/train/gps"; log "$MSG_CONNECTED_INTERCITES_JOUR";
@@ -158,6 +164,7 @@ print_distance(){
   fi
 }
 
+# Detect the onboard Wi-Fi SSID to choose the correct GPS API endpoint (TGV INOUI / OUIGO / LYRIA / INTERCITES)
 CURRENT_SSID=$(nmcli device wifi show-password | awk '/SSID/ {print $2}')
 case $CURRENT_SSID in
   *"INTERCITES"*) determine_intercites_type ;;
@@ -166,6 +173,7 @@ case $CURRENT_SSID in
   *"OUIFI"*) url_root="ouifi.ouigo.com:8084/api/gps"; log "$MSG_CONNECTED_OUIGO";;
 esac
 
+# Output format: "latitude longitude speed" on a single line (read by `read -r LATITUDE LONGITUDE SPEED <<< ...`)
 function get_train_position(){
   position_response=$(curl https://$url_root -s ) || { echo "$MSG_FETCH_POSITION_FAILED"; exit 1; }
   if $uncapsulate_response; then
@@ -177,11 +185,13 @@ function get_train_position(){
   [[ "$latitude $longitude" == "0 0" ]] && echo "$MSG_POSITION_NOT_AVAILABLE" && exit 0
 }
 
+
 read -r LATITUDE LONGITUDE SPEED <<< $(get_train_position)
 whisper "$MSG_CURRENT_POSITION $LATITUDE $LONGITUDE"
 
 
-
+# Query Overpass and return JSON on stdout.
+# If HTTP != 200 (e.g., 429 rate-limit / 504 overload), return non-zero so the caller can skip and try another radius.
 query_overpass_json() {
   local q="$1"
   local tmp
@@ -210,7 +220,7 @@ query_overpass_json() {
   fi
 
 
-  # Vérifie que ça ressemble à du JSON
+# Sanity-check: ensure the response looks like JSON before passing it to jq
   if ! head -c 1 "$tmp" | grep -q '[{[]'; then
     echo "$MSG_OVERPASS_NON_JSON" >&2
     head -n 10 "$tmp" >&2
@@ -222,7 +232,7 @@ query_overpass_json() {
   rm -f "$tmp"
 }
 
-# Railway line / track name(s) near current position (best effort)
+# Best-effort: query nearby railway ways (around 10m) to display track/line name(s)
 q='[out:json];way[railway](around:10,'"$LATITUDE"','"$LONGITUDE"');(._;>;);out;'
 json=$(query_overpass_json "$q") || true
 
@@ -243,12 +253,14 @@ if [[ -n "$json" ]]; then
   [[ -n "$railway_lines" ]] && echo "$railway_lines"
 fi
 
+# Progressive search radius (meters): start small, expand until a station is found
 for DISTANCE in 500 1000 2000 5000 10000 20000 30000; do
   log "$MSG_SEARCHING_STATIONS $DISTANCE m $MSG_KM_FROM $LATITUDE, $LONGITUDE."
 
   q='[out:json];node[railway=station][station!=subway](around:'"$DISTANCE"','"$LATITUDE"','"$LONGITUDE"');out 1;'
   json=$(query_overpass_json "$q") || continue
 
+  # Extract first matching station node: emit 3 lines (lat, lon, name), keep only the first triplet, then convert to one line for `read`
   read -r FOUND_STATION_LAT FOUND_STATION_LON FOUND_STATION < <(
     printf '%s' "$json" \
     | jq -r '.elements[] | select(.type=="node") | "\(.lat)\n\(.lon)\n\(.tags.name // "")"' \
@@ -274,10 +286,12 @@ SPEED_WITH_UNITS="$(printf "%.0f" "$(echo "scale=2; $SPEED*3.6" | bc -l)") $MSG_
 
 first_position_distance_from_station=$(distance "$FOUND_STATION_LAT" "$FOUND_STATION_LON"  "$LATITUDE" "$LONGITUDE")
 
-# Get the train position again to be able to determine if the train moves away from or approaches the station
+# Fetch the train position a second time to determine whether it is approaching or moving away from the station
 read -r SECOND_LATITUDE SECOND_LONGITUDE SECOND_SPEED <<< $(get_train_position)
 second_position_distance_from_station=$(distance "$FOUND_STATION_LAT" "$FOUND_STATION_LON"  "$SECOND_LATITUDE" "$SECOND_LONGITUDE")
 log "$MSG_TRAIN_WAS $MSG_AT $first_position_distance_from_station km $MSG_FROM $FOUND_STATION $MSG_AND $MSG_IS_NOW $MSG_AT $second_position_distance_from_station km $MSG_FROM $FOUND_STATION."
+
+# Consider the train "stopped" if speed < 1 km/h, otherwise compare distances to decide approaching vs moving away
 if [ 1 -gt "$(printf "%.0f" "$(echo "scale=0; $SPEED*3.6" | bc -l)")" ]
 then
   echo "$MSG_TRAIN_STOPPED $(print_distance $second_position_distance_from_station) $MSG_FROM $FOUND_STATION."
