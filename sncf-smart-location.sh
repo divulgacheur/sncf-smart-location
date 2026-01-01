@@ -4,7 +4,7 @@ LC_NUMERIC="en_US.UTF-8"
 POSITIONAL_ARGS=()
 
 if ! command -v curl &> /dev/null || ! command -v jq &> /dev/null || ! command -v bc &> /dev/null; then
-    echo "Error: Required dependencies (curl, jq, bc) not found."
+    echo "$MSG_DEPS_MISSING"
     exit 1
 fi
 
@@ -20,7 +20,7 @@ while [[ $# -gt 0 ]]; do
       shift # past argument
       ;;
     -*|--*)
-      echo "Unknown option $1"
+      echo "$MSG_UNKNOWN_OPTION $1"
       exit 1
       ;;
     *)
@@ -62,6 +62,17 @@ if [[ $LANG == *"fr"* ]]; then
   MSG_FROM="de"
   MSG_AND="et"
   MSG_IS_NOW="est maintenant"
+  MSG_DEPS_MISSING="Erreur : dépendances requises (curl, jq, bc) introuvables."
+  MSG_UNKNOWN_OPTION="Option inconnue"
+  MSG_FETCH_POSITION_FAILED="Erreur : impossible de récupérer la position du train."
+  MSG_CURL_FAILED="Erreur : curl a échoué."
+  MSG_OVERPASS_504="API Overpass saturée (HTTP 504 Gateway Timeout) — requête ignorée."
+  MSG_OVERPASS_HTTP_ERROR="Erreur API Overpass : HTTP"
+  MSG_OVERPASS_IGNORED="— requête ignorée."
+  MSG_OVERPASS_NON_JSON="Overpass a renvoyé une réponse non-JSON. Premières lignes :"
+  MSG_NO_STATION_FOUND="Aucune gare à proximité trouvée (API Overpass indisponible ou limitée). Réessayez dans quelques secondes."
+  MSG_LAT_LON="Latitude Longitude"
+  MSG_STATION_WORD="gare"
 else
   MSG_POSITION_NOT_AVAILABLE="Position not available"
   MSG_CURRENT_POSITION="Current position (latitude longitude):"
@@ -85,6 +96,17 @@ else
   MSG_FROM="from"
   MSG_AND="and"
   MSG_IS_NOW="is now"
+  MSG_DEPS_MISSING="Error: Required dependencies (curl, jq, bc) not found."
+  MSG_UNKNOWN_OPTION="Unknown option"
+  MSG_FETCH_POSITION_FAILED="Error: Failed to fetch train position."
+  MSG_CURL_FAILED="Error: curl failed."
+  MSG_OVERPASS_504="Overpass API overloaded (HTTP 504 Gateway Timeout) — request ignored."
+  MSG_OVERPASS_HTTP_ERROR="Overpass API error: HTTP"
+  MSG_OVERPASS_IGNORED="— request ignored."
+  MSG_OVERPASS_NON_JSON="Overpass returned non-JSON. First lines:"
+  MSG_NO_STATION_FOUND="No nearby station found (Overpass API unavailable or rate-limited). Please retry in a few seconds."
+  MSG_LAT_LON="Latitude Longitude"
+  MSG_STATION_WORD="station"
 fi
 
 deg2rad () {
@@ -145,7 +167,7 @@ case $CURRENT_SSID in
 esac
 
 function get_train_position(){
-  position_response=$(curl https://$url_root -s ) || { echo "Error: Failed to fetch train position."; exit 1; }
+  position_response=$(curl https://$url_root -s ) || { echo "$MSG_FETCH_POSITION_FAILED"; exit 1; }
   if $uncapsulate_response; then
     position_response=$( echo "$position_response" | sed 's/[()]//g' | sed 's/;//g')
   fi
@@ -158,20 +180,94 @@ function get_train_position(){
 read -r LATITUDE LONGITUDE SPEED <<< $(get_train_position)
 whisper "$MSG_CURRENT_POSITION $LATITUDE $LONGITUDE"
 
-curl --silent https://overpass-api.de/api/interpreter \
-  --data-urlencode   "data=[out:json];way[railway](around:10,$LATITUDE,$LONGITUDE);(._;>;);out;" \
-  | jq '.elements | map(select(.type=="way")) | .[] | .tags | .name |select( . != null )'  --raw-output | sort | uniq --count | sed 's/^ *//' | sed -E "s/^([2-9]+)/\1 $MSG_RAILWAY_LINES/g" | sed "s/^1/$MSG_SINGLE_TRACK/g"
+
+
+query_overpass_json() {
+  local q="$1"
+  local tmp
+  tmp=$(mktemp)
+
+  local http
+  http=$(curl -sS -o "$tmp" -w '%{http_code}' \
+    --connect-timeout 10 --max-time 60 \
+    -H 'Accept: application/json' \
+    -H 'User-Agent: overpass-bash-script/1.0' \
+    https://overpass-api.de/api/interpreter \
+    --data-urlencode "data=$q") || {
+      echo "curl failed" >&2
+      rm -f "$tmp"
+      return 1
+    }
+
+  if [[ "$http" != "200" ]]; then
+    if [[ "$http" == "504" ]]; then
+      log "$MSG_OVERPASS_504"
+    else
+      log "$MSG_OVERPASS_HTTP_ERROR $http $MSG_OVERPASS_IGNORED"
+    fi
+    rm -f "$tmp"
+    return 2
+  fi
+
+
+  # Vérifie que ça ressemble à du JSON
+  if ! head -c 1 "$tmp" | grep -q '[{[]'; then
+    echo "$MSG_OVERPASS_NON_JSON" >&2
+    head -n 10 "$tmp" >&2
+    rm -f "$tmp"
+    return 3
+  fi
+
+  cat "$tmp"
+  rm -f "$tmp"
+}
+
+# Railway line / track name(s) near current position (best effort)
+q='[out:json];way[railway](around:10,'"$LATITUDE"','"$LONGITUDE"');(._;>;);out;'
+json=$(query_overpass_json "$q") || true
+
+if [[ -n "$json" ]]; then
+  railway_lines=$(
+    printf '%s' "$json" \
+      | jq -r '.elements
+               | map(select(.type=="way"))
+               | .[]
+               | .tags.name
+               | select(. != null)' \
+      | sort | uniq -c \
+      | sed 's/^ *//' \
+      | sed -E "s/^([2-9]+)/\1 $MSG_RAILWAY_LINES/g" \
+      | sed "s/^1/$MSG_SINGLE_TRACK/g"
+  )
+
+  [[ -n "$railway_lines" ]] && echo "$railway_lines"
+fi
+
 for DISTANCE in 500 1000 2000 5000 10000 20000 30000; do
-  log "$MSG_SEARCHING_STATIONS $DISTANCE $MSG_KM_FROM $LATITUDE, $LONGITUDE."
-  read -r FOUND_STATION_LAT FOUND_STATION_LON FOUND_STATION <<<$(curl --silent https://overpass-api.de/api/interpreter \
-   --data-urlencode "data=[out:json];node[railway=station][station!=subway](around:$DISTANCE,$LATITUDE,$LONGITUDE);(._;>;);out 1;" \
-   | jq '.elements | map(select(.type=="node")) | .[] | .lat, .lon, .tags.name' --raw-output | xargs -d '\n' | uniq |  head -1)
-  if [[ -n $FOUND_STATION ]]; then
-    whisper "$MSG_NEAREST_STATION_FOUND $FOUND_STATION Latitude Longitude $FOUND_STATION_LAT $FOUND_STATION_LON"
+  log "$MSG_SEARCHING_STATIONS $DISTANCE m $MSG_KM_FROM $LATITUDE, $LONGITUDE."
+
+  q='[out:json];node[railway=station][station!=subway](around:'"$DISTANCE"','"$LATITUDE"','"$LONGITUDE"');out 1;'
+  json=$(query_overpass_json "$q") || continue
+
+  read -r FOUND_STATION_LAT FOUND_STATION_LON FOUND_STATION < <(
+    printf '%s' "$json" \
+    | jq -r '.elements[] | select(.type=="node") | "\(.lat)\n\(.lon)\n\(.tags.name // "")"' \
+    | head -n 3 \
+    | xargs -d '\n'
+  )
+
+  if [[ -n "$FOUND_STATION" ]]; then
+    whisper "$MSG_NEAREST_STATION_FOUND $FOUND_STATION $MSG_LAT_LON $FOUND_STATION_LAT $FOUND_STATION_LON"
     DISTANCE=$(echo "scale=0; $DISTANCE/1000" | bc)
     break
   fi
 done
+
+if [[ -z "$FOUND_STATION" || -z "$FOUND_STATION_LAT" || -z "$FOUND_STATION_LON" ]]; then
+  echo "$MSG_NO_STATION_FOUND" >&2
+  whisper "$MSG_YOU_ARE_HERE https://www.openrailwaymap.org/?lat=$LATITUDE&lon=$LONGITUDE&zoom=14"
+  exit 0
+fi
 
 whisper "$MSG_YOU_ARE_HERE https://www.openrailwaymap.org/?lat=$LATITUDE&lon=$LONGITUDE&zoom=14"
 SPEED_WITH_UNITS="$(printf "%.0f" "$(echo "scale=2; $SPEED*3.6" | bc -l)") $MSG_KM_H"
@@ -184,7 +280,7 @@ second_position_distance_from_station=$(distance "$FOUND_STATION_LAT" "$FOUND_ST
 log "$MSG_TRAIN_WAS $MSG_AT $first_position_distance_from_station km $MSG_FROM $FOUND_STATION $MSG_AND $MSG_IS_NOW $MSG_AT $second_position_distance_from_station km $MSG_FROM $FOUND_STATION."
 if [ 1 -gt "$(printf "%.0f" "$(echo "scale=0; $SPEED*3.6" | bc -l)")" ]
 then
-  echo "$MSG_TRAIN_STOPPED $(print_distance $second_position_distance_from_station) $MSG_FROM $FOUND_STATION station."
+  echo "$MSG_TRAIN_STOPPED $(print_distance $second_position_distance_from_station) $MSG_FROM $FOUND_STATION."
 elif [ 1 -eq $(echo "$second_position_distance_from_station < $first_position_distance_from_station" | bc -l ) ]
 then
   echo "$MSG_APPROACHING_STATION $FOUND_STATION $MSG_AT $(print_distance $second_position_distance_from_station) $MSG_AND $MSG_AT $SPEED_WITH_UNITS"
@@ -192,5 +288,6 @@ elif [ 1 -eq $(echo "$second_position_distance_from_station > $first_position_di
 then
   echo "$MSG_MOVING_AWAY_STATION $FOUND_STATION $MSG_AT $(print_distance $second_position_distance_from_station) $MSG_AND $MSG_AT $SPEED_WITH_UNITS"
 else 
-  echo "$MSG_TRAIN_STOPPED $(print_distance $second_position_distance_from_station) $MSG_FROM $FOUND_STATION station."
+  echo "$MSG_TRAIN_STOPPED $(print_distance $second_position_distance_from_station) $MSG_FROM $FOUND_STATION $MSG_STATION_WORD."
+
 fi
