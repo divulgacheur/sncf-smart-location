@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import trainIconUrl from './train-icon.svg';
+import googleMapsIconUrl from './google-maps-icon.svg';
+import openStreetMapIconUrl from './openstreetmap-icon.svg';
 
 const trainIcon = L.icon({
   iconUrl: trainIconUrl,
@@ -219,9 +221,9 @@ const TrainPosition = () => {
             : {
                 ...prevData,
                 stationImageUrl: image,
-                stationImageTitle: prevData.stationImageTitle || pageTitle,
-                stationImageSourceUrl: prevData.stationImageSourceUrl || fallbackSourceUrl,
-                stationImageFileName: prevData.stationImageFileName || pageImageName,
+                stationImageTitle: pageTitle,
+                stationImageSourceUrl: fallbackSourceUrl,
+                stationImageFileName: pageImageName || null,
               }
         ));
       }
@@ -792,39 +794,65 @@ const TrainPosition = () => {
                 </div>
               </div>
               <div className="col-md-4">
-                <div className="h-100 p-3 border rounded">
-                  <h5 className="mb-2">Coordonnées GPS</h5>
-                  <div className="d-flex flex-column gap-2">
-                    <div className="d-flex justify-content-between">
-                      <span className="text-muted">Latitude</span>
-                      <span>{formatCoordinate(trainData.latitude)}</span>
-                    </div>
-                    <div className="d-flex justify-content-between">
-                      <span className="text-muted">Longitude</span>
-                      <span>{formatCoordinate(trainData.longitude)}</span>
-                    </div>
-                    <div className="small text-muted">Précision à 5 décimales</div>
+              <div className="h-100 p-3 border rounded">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <h5 className="mb-0">Coordonnées GPS</h5>
+                  <div className="d-flex align-items-center gap-2">
+                    <a
+                      href={`https://www.google.com/maps?q=${trainData.latitude},${trainData.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Ouvrir dans Google Maps"
+                    >
+                      <img
+                        src={googleMapsIconUrl}
+                        alt="Google Maps"
+                        style={{ width: '22px', height: '22px' }}
+                      />
+                    </a>
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${trainData.latitude}&mlon=${trainData.longitude}#map=16/${trainData.latitude}/${trainData.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Ouvrir dans OpenStreetMap"
+                    >
+                      <img
+                        src={openStreetMapIconUrl}
+                        alt="OpenStreetMap"
+                        style={{ width: '22px', height: '22px' }}
+                      />
+                    </a>
                   </div>
+                </div>
+                <div className="d-flex flex-column gap-2">
+                  <div className="d-flex justify-content-between">
+                    <span className="text-muted">Latitude</span>
+                    <span>{formatCoordinate(trainData.latitude)}</span>
+                  </div>
+                  <div className="d-flex justify-content-between">
+                    <span className="text-muted">Longitude</span>
+                    <span>{formatCoordinate(trainData.longitude)}</span>
+                  </div>
+                  <div className="small text-muted">Précision à 5 décimales</div>
+                  <a
+                    href={`https://signal.eu.org/rail/spot/${trainData.latitude}/${trainData.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Trains à proximité de l'emplacement actuel
+                  </a>
                 </div>
               </div>
             </div>
+          </div>
 
             <div className="row g-3">
               <div className="col-lg-6">
                 <div className="h-100 p-3 border rounded">
                   <h5 className="mb-3">Contexte de la ligne ferroviaire</h5>
-                  <div className="mb-2">
-                    <a
-                      href={`https://signal.eu.org/rail/spot/${trainData.latitude}/${trainData.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Trains à proximité de l'emplacement actuel
-                    </a>
-                  </div>
-                  {trainData.wikiSummary && (
-                    <div className="mt-3">
-                      <h6 className="mb-2">Résumé de la ligne ferroviaire</h6>
+                {trainData.wikiSummary && (
+                  <div className="mt-3">
+                    <h6 className="mb-2">Résumé de la ligne ferroviaire</h6>
                       <p className="card-text">{formatTextWithLineBreaks(trainData.wikiSummary)}</p>
                     </div>
                   )}
