@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import 'bootstrap/dist/css/bootstrap.css';
+import 'leaflet/dist/leaflet.css';
 
 import TrainPosition from './TrainPosition';
 import reportWebVitals from './reportWebVitals';
