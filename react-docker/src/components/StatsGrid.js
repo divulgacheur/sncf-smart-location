@@ -13,10 +13,37 @@ const StatsGrid = ({
   speedPercent,
   hasLineMaxSpeed,
   speedMax,
+  distanceKm,
   distanceKmDisplay,
   proximityPercent,
   trainData,
 }) => {
+  const stationName = trainData.nearestStation;
+  const stationPrefix = (() => {
+    if (!stationName) return 'de';
+    const trimmed = stationName.trim();
+    if (!trimmed) return 'de';
+    const firstChar = trimmed[0].toLowerCase();
+    return 'aeiouyh'.includes(firstChar) ? "d'" : 'de';
+  })();
+  const isStationaryNearStation = Boolean(
+    stationName
+      && !isMoving
+      && distanceKm !== null
+      && distanceKm <= 0.3
+  );
+  const proximityLabel = (() => {
+    if (!stationName) {
+      return distanceKmDisplay ? `${distanceKmDisplay} km` : 'N/A';
+    }
+    if (distanceKmDisplay) {
+      return isStationaryNearStation
+        ? `Stationné à ${stationName}`
+        : `À ${distanceKmDisplay} km ${stationPrefix} ${stationName}`;
+    }
+    return `Gare la plus proche : ${stationName}`;
+  })();
+
   return (
     <div className="row g-3 mb-3">
       <div className="col-md-4">
@@ -42,7 +69,7 @@ const StatsGrid = ({
         <div className="h-100 p-3 border rounded">
           <h5 className="mb-2">Proximité de la gare la plus proche</h5>
           <div className="display-6">
-            {distanceKmDisplay ? `${distanceKmDisplay} km` : 'N/A'}
+            {proximityLabel}
           </div>
           <div className="progress mt-3" style={{ height: '10px' }}>
             <div

@@ -92,6 +92,7 @@ const TrainPosition = () => {
               speedPercent={speedPercent}
               hasLineMaxSpeed={hasLineMaxSpeed}
               speedMax={speedMax}
+              distanceKm={distanceKm}
               distanceKmDisplay={distanceKmDisplay}
               proximityPercent={proximityPercent}
               trainData={trainData}
