@@ -125,6 +125,7 @@ const TrainPosition = () => {
     stationImageSourceUrl: null,
     stationImageTitle: null,
     stationImageFileName: null,
+    stationImageSource: null,
     wikiSummary: null,
     wikiUrl: null
   });
@@ -192,6 +193,7 @@ const TrainPosition = () => {
                 stationImageTitle: label,
                 stationImageSourceUrl: `https://www.wikidata.org/wiki/${firstResult.id}`,
                 stationImageFileName: imageClaim,
+                stationImageSource: 'wikidata',
               }
         ));
         fetchStationImageSource(imageClaim);
@@ -224,6 +226,7 @@ const TrainPosition = () => {
                 stationImageTitle: pageTitle,
                 stationImageSourceUrl: fallbackSourceUrl,
                 stationImageFileName: pageImageName || null,
+                stationImageSource: 'wikipedia',
               }
         ));
       }
@@ -509,6 +512,7 @@ const TrainPosition = () => {
           bearingDeg: bearing,
         };
 
+        setError(null);
         setTrainData(prevData => ({
           ...prevData,
           latitude: nextLat,
@@ -669,6 +673,16 @@ const TrainPosition = () => {
     return Number(value).toFixed(5);
   };
 
+  const getStationImageAlt = () => {
+    if (trainData.stationImageSource === 'wikipedia') {
+      return "Photo issue d'une recherche du nom de la gare.";
+    }
+    if (trainData.stationImageSource === 'wikidata') {
+      return "Photo issue d'une recherche via Wikidata.";
+    }
+    return 'Source de la photo non précisée.';
+  };
+
   
   return (
     <div style={backgroundStyle}>
@@ -731,7 +745,8 @@ const TrainPosition = () => {
         </div>
         {trainData.stationImageUrl && (trainData.stationImageTitle || trainData.stationImageSourceUrl) && (
           <div className="text-end small text-muted mb-3">
-            Photo :{' '}
+            <span title={getStationImageAlt()}>Photo :</span>{' '}
+            <span className="visually-hidden">{getStationImageAlt()}</span>
             <a
               href={
                 trainData.stationImageFileName
@@ -740,6 +755,7 @@ const TrainPosition = () => {
               }
               target="_blank"
               rel="noopener noreferrer"
+              aria-label={`${trainData.stationImageTitle || "Source de l'image"} (${getStationImageAlt()})`}
             >
               {trainData.stationImageTitle || 'Source de l\'image'}
             </a>
