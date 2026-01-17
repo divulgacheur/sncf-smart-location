@@ -6,6 +6,7 @@ import MapPanel from './components/MapPanel';
 import StationImageCredit from './components/StationImageCredit';
 import StatsGrid from './components/StatsGrid';
 import TrainHeader from './components/TrainHeader';
+import ViewpointsCard from './components/ViewpointsCard';
 
 const TrainPosition = () => {
   const {
@@ -20,6 +21,10 @@ const TrainPosition = () => {
     setRefreshCountdown,
     stationSearchStatus,
     trainData,
+    viewpoints,
+    viewpointStatus,
+    refreshViewpoints,
+    viewpointQueryUrl,
   } = useTrainPosition();
 
   const speedValue = Number(trainData.speed) || 0;
@@ -102,6 +107,14 @@ const TrainPosition = () => {
                   hasCoordinates={hasCoordinates}
                   autoCenter={autoCenter}
                   setAutoCenter={setAutoCenter}
+                />
+              </div>
+              <div className="col-lg-6">
+                <ViewpointsCard
+                  viewpoints={viewpoints}
+                  viewpointStatus={viewpointStatus}
+                  onRefresh={refreshViewpoints}
+                  queryUrl={viewpointQueryUrl}
                 />
               </div>
             </div>

@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { distances, refreshIntervalSec } from '../constants/train';
+import {
+  distances,
+  refreshIntervalSec,
+  viewpointAheadAngleDeg,
+  viewpointMaxResults,
+  viewpointMinMoveKm,
+  viewpointRefreshMs,
+  viewpointSearchKm,
+} from '../constants/train';
 import { calculateDistance, calculateBearing, projectPosition } from '../utils/geo';
 import { correctLineName, normalizeKey } from '../utils/string';
 
@@ -23,6 +31,48 @@ const initialTrainData = {
   wikiUrl: null,
 };
 
+const normalizeAngleDelta = (fromDeg, toDeg) => {
+  return ((toDeg - fromDeg + 540) % 360) - 180;
+};
+
+const resolveViewpointSide = (angleDelta) => {
+  if (angleDelta == null) return null;
+  if (angleDelta > 15) return 'droite';
+  if (angleDelta < -15) return 'gauche';
+  return 'face';
+};
+
+const buildViewpointList = (points, latitude, longitude, headingDeg) => {
+  const candidates = points.map((point) => {
+    const bearingDeg = calculateBearing(latitude, longitude, point.lat, point.lon);
+    const angleDelta = headingDeg != null ? normalizeAngleDelta(headingDeg, bearingDeg) : null;
+    return {
+      id: point.id,
+      name: point.name,
+      lat: point.lat,
+      lon: point.lon,
+      distanceKm: calculateDistance(latitude, longitude, point.lat, point.lon),
+      angleDelta,
+      side: resolveViewpointSide(angleDelta),
+    };
+  });
+
+  if (headingDeg == null) {
+    return candidates
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, viewpointMaxResults);
+  }
+
+  const aheadCandidates = candidates
+    .filter((item) => Math.abs(item.angleDelta) <= viewpointAheadAngleDeg)
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+  const sideCandidates = candidates
+    .filter((item) => Math.abs(item.angleDelta) > viewpointAheadAngleDeg)
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+
+  return [...aheadCandidates, ...sideCandidates].slice(0, viewpointMaxResults);
+};
+
 export const useTrainPosition = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -30,6 +80,7 @@ export const useTrainPosition = () => {
   const [autoCenter, setAutoCenter] = useState(true);
   const [isStationRefreshing, setIsStationRefreshing] = useState(false);
   const [stationSearchStatus, setStationSearchStatus] = useState('idle');
+  const [viewpointStatus, setViewpointStatus] = useState('idle');
   const isTrainFetchInFlightRef = useRef(false);
   const imageRequestRef = useRef({ stationKey: null, source: null });
   const lastPositionRef = useRef({
@@ -42,10 +93,105 @@ export const useTrainPosition = () => {
   const lastOverpassRef = useRef({
     line: { lat: null, lon: null, at: 0, inFlight: false },
     station: { lat: null, lon: null, at: 0, inFlight: false },
+    viewpoint: { lat: null, lon: null, at: 0, inFlight: false },
+  });
+  const viewpointCacheRef = useRef({
+    lat: null,
+    lon: null,
+    points: [],
   });
 
   const [trainData, setTrainData] = useState(initialTrainData);
   const [liveDistanceKm, setLiveDistanceKm] = useState(null);
+  const [viewpoints, setViewpoints] = useState([]);
+  const [viewpointQueryUrl, setViewpointQueryUrl] = useState('');
+
+  const fetchViewpoints = useCallback(async (latitude, longitude) => {
+    const cache = viewpointCacheRef.current;
+    if (cache.points.length && cache.lat != null && cache.lon != null) {
+      const distanceFromCache = calculateDistance(latitude, longitude, cache.lat, cache.lon);
+      if (distanceFromCache <= viewpointSearchKm) {
+        const headingDeg = lastPositionRef.current.bearingDeg;
+        const cachedList = buildViewpointList(cache.points, latitude, longitude, headingDeg);
+        setViewpoints(cachedList);
+        setViewpointStatus(cachedList.length ? 'ready' : 'empty');
+        return;
+      }
+    }
+
+    const now = Date.now();
+    const last = lastOverpassRef.current.viewpoint;
+    const distanceSinceLast = last.lat && last.lon
+      ? calculateDistance(latitude, longitude, last.lat, last.lon)
+      : null;
+    const timeSinceLast = now - last.at;
+    const isTooSoon = timeSinceLast < viewpointRefreshMs;
+    const isTooClose = distanceSinceLast !== null && distanceSinceLast < viewpointMinMoveKm;
+
+    if (last.inFlight || (isTooSoon && isTooClose)) {
+      return;
+    }
+
+    lastOverpassRef.current.viewpoint = {
+      lat: latitude,
+      lon: longitude,
+      at: now,
+      inFlight: true,
+    };
+
+    setViewpointStatus('loading');
+
+    const query = `[out:json][timeout:25];
+      (
+        node["amenity"="place_of_worship"]["religion"="christian"](around:${viewpointSearchKm * 1000},${latitude},${longitude});
+        way["amenity"="place_of_worship"]["religion"="christian"](around:${viewpointSearchKm * 1000},${latitude},${longitude});
+        node["building"="church"](around:${viewpointSearchKm * 1000},${latitude},${longitude});
+        way["building"="church"](around:${viewpointSearchKm * 1000},${latitude},${longitude});
+      );
+      out center 40;`;
+    const overpassUrl = `https://overpass-turbo.eu/?Q=${encodeURIComponent(query)}&C=${latitude};${longitude};13`;
+
+    try {
+      setViewpointQueryUrl(overpassUrl);
+      const response = await fetch(`https://overpass.private.coffee/api/interpreter?data=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      const points = (data.elements || []).map((element) => {
+        const pointLat = element.lat ?? element.center?.lat;
+        const pointLon = element.lon ?? element.center?.lon;
+        if (pointLat == null || pointLon == null) return null;
+
+        return {
+          id: `${element.type}-${element.id}`,
+          name: element.tags?.name || element.tags?.description || 'Eglise',
+          lat: pointLat,
+          lon: pointLon,
+        };
+      }).filter(Boolean);
+
+      viewpointCacheRef.current = {
+        lat: latitude,
+        lon: longitude,
+        points,
+      };
+
+      const headingDeg = lastPositionRef.current.bearingDeg;
+      const sorted = buildViewpointList(points, latitude, longitude, headingDeg);
+      setViewpoints(sorted);
+      setViewpointStatus(sorted.length ? 'ready' : 'empty');
+    } catch (error) {
+      console.error('Erreur lors de la récupération des points de vue:', error);
+      setViewpointStatus('error');
+    } finally {
+      lastOverpassRef.current.viewpoint.inFlight = false;
+    }
+  }, []);
+
+  const refreshViewpoints = useCallback(() => {
+    if (!trainData.latitude || !trainData.longitude) return;
+    viewpointCacheRef.current = { lat: null, lon: null, points: [] };
+    lastOverpassRef.current.viewpoint = { lat: null, lon: null, at: 0, inFlight: false };
+    fetchViewpoints(trainData.latitude, trainData.longitude);
+  }, [fetchViewpoints, trainData.latitude, trainData.longitude]);
 
   const fetchStationImageSource = useCallback(async (fileName) => {
     if (!fileName) return;
@@ -486,10 +632,10 @@ export const useTrainPosition = () => {
     const intervalId = setInterval(() => {
       fetchTrainData({ silent: true });
       setRefreshCountdown(refreshIntervalSec);
-    }, 15000);
+    }, refreshIntervalSec * 1000);
 
     return () => clearInterval(intervalId);
-  }, [fetchTrainData]);
+  }, [fetchTrainData, refreshIntervalSec]);
 
   useEffect(() => {
     const countdownId = setInterval(() => {
@@ -497,13 +643,19 @@ export const useTrainPosition = () => {
     }, 1000);
 
     return () => clearInterval(countdownId);
-  }, []);
+  }, [refreshIntervalSec]);
 
   useEffect(() => {
     if (trainData.latitude && trainData.longitude) {
       fetchAndSetTrainLineData(trainData.latitude, trainData.longitude);
     }
   }, [trainData.latitude, trainData.longitude, fetchAndSetTrainLineData]);
+
+  useEffect(() => {
+    if (trainData.latitude && trainData.longitude) {
+      fetchViewpoints(trainData.latitude, trainData.longitude);
+    }
+  }, [trainData.latitude, trainData.longitude, fetchViewpoints]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -547,5 +699,9 @@ export const useTrainPosition = () => {
     setRefreshCountdown,
     stationSearchStatus,
     trainData,
+    viewpoints,
+    viewpointStatus,
+    refreshViewpoints,
+    viewpointQueryUrl,
   };
 };
