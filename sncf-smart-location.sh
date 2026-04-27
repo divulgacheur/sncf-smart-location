@@ -169,7 +169,7 @@ CURRENT_SSID=$(nmcli device wifi show-password | awk '/SSID/ {print $2}')
 case $CURRENT_SSID in
   *"INTERCITES"*) determine_intercites_type ;;
   *"INOUI"*) url_root="wifi.sncf/router/api/train/gps"; log "$MSG_CONNECTED_TGV_INOUI";;
-  *"LYRIA"*) url_root="wifi.tgv-lyria.com/router/api/train/gps"; log "$MSG_CONNECTED_LYRIA";;
+  *"LYRIA"*) url_root="wifi.tgv-lyria.com/api/train/gps/position/"; log "$MSG_CONNECTED_LYRIA";;
   *"OUIFI"*) url_root="ouifi.ouigo.com:8084/api/gps"; log "$MSG_CONNECTED_OUIGO";;
 esac
 
